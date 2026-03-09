@@ -183,7 +183,28 @@ fi
 
 echo "启动openEuler QEMU虚拟机..."
 echo "  实例: $INSTANCE_NAME"
-echo "  配置: $CONFIG_FILE"
+if [ "$USE_PERSISTENT_STORAGE" == "true" ]; then
+    # 显示配置文件信息
+    if [ -f "$CONFIG_FILE" ]; then
+        CONFIG_TIME=$(stat -c %y "$CONFIG_FILE" | cut -d'.' -f1)
+        CONFIG_HASH=$(md5sum "$CONFIG_FILE" | awk '{print $1}')
+        echo "  配置: $CONFIG_FILE  $CONFIG_TIME  $CONFIG_HASH"
+    else
+        echo "  配置: $CONFIG_FILE  ERROR: 文件不存在"
+    fi
+    
+    # 显示磁盘镜像信息
+    if [ -f "$DISK_IMG" ]; then
+        DISK_TIME=$(stat -c %y "$DISK_IMG" | cut -d'.' -f1)
+        DISK_HASH=$(md5sum "$DISK_IMG" | awk '{print $1}')
+        echo "  持久化存储: 已启用 ($DISK_IMG)  $DISK_TIME  $DISK_HASH"
+    else
+        echo "  持久化存储: 已启用 ($DISK_IMG)  ERROR: 文件不存在"
+    fi
+else
+    echo "  配置: $CONFIG_FILE"
+    echo "  持久化存储: 未启用"
+fi
 
 # 日志文件路径
 LOG_FILE="$SCRIPT_DIR/${INSTANCE_NAME}_qemu.log"
@@ -295,7 +316,8 @@ fi
 echo $QEMU_PID > "$SCRIPT_DIR/${INSTANCE_NAME}_qemu.pid"
 
 echo "QEMU运行中，PID: $QEMU_PID"
-echo "停止: $SCRIPT_DIR/stop_openeuler.sh $INSTANCE_NAME"
+echo "停止命令: $SCRIPT_DIR/stop_openeuler.sh $INSTANCE_NAME"
+echo "停止命令: $SCRIPT_DIR/stop_openeuler.sh $QEMU_PID"
 
 # 打印进程详细信息
 verbose ""

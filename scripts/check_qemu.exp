@@ -1,0 +1,23 @@
+#!/usr/bin/expect
+
+# QEMU状态检查脚本
+# 功能：通过QEMU Monitor检查虚拟机运行状态和磁盘信息
+# 使用方法：./check_qemu.exp
+
+set timeout 30
+
+# 连接到QEMU Monitor（端口4444）
+spawn telnet localhost 4444
+expect "qemu) "
+
+# 检查虚拟机运行状态
+send "info status\r"
+expect "qemu) "
+
+# 检查块设备信息（包括持久化磁盘）
+send "info block\r"
+expect "qemu) "
+
+# 退出QEMU Monitor
+send "quit\r"
+expect eof

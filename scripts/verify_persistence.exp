@@ -1,0 +1,115 @@
+#!/usr/bin/expect
+
+# 持久性验证脚本
+# 功能：验证持久化数据在虚拟机重启后是否保留
+# 使用场景：在虚拟机重启后执行，验证数据持久性
+# 使用方法：./verify_persistence.exp
+# 前置条件：需要先执行setup_persistence_final.exp创建测试文件
+
+set timeout 60
+
+# 配置文件路径
+set config_file "default_config.sh"
+set disk_img "default_disk.img"
+
+puts "\n=== 文件信息检查 ==="
+
+# 检查配置文件信息
+if {[catch {exec stat -c "%y" $config_file} config_mtime]} {
+    puts "配置: $config_file  ERROR: 无法获取修改时间"
+} else {
+    set config_mtime [string range $config_mtime 0 [expr [string first "." $config_mtime] - 1]]
+    if {[catch {exec sh -c "md5sum $config_file"} config_md5]} {
+        puts "配置: $config_file  $config_mtime  ERROR: 无法计算hash"
+    } else {
+        set config_hash [lindex [split $config_md5] 0]
+        puts "配置: $config_file  $config_mtime  $config_hash"
+    }
+}
+
+# 检查磁盘镜像信息
+if {[catch {exec stat -c "%y" $disk_img} disk_mtime]} {
+    puts "持久化存储: 已启用 ($disk_img)  ERROR: 无法获取修改时间"
+} else {
+    set disk_mtime [string range $disk_mtime 0 [expr [string first "." $disk_mtime] - 1]]
+    if {[catch {exec sh -c "md5sum $disk_img"} disk_md5]} {
+        puts "持久化存储: 已启用 ($disk_img)  $disk_mtime  ERROR: 无法计算hash"
+    } else {
+        set disk_hash [lindex [split $disk_md5] 0]
+        puts "持久化存储: 已启用 ($disk_img)  $disk_mtime  $disk_hash"
+    }
+}
+
+# 从配置文件中读取密码
+if {[catch {exec sh -c "grep '^ROOT_PASSWORD=' $config_file | cut -d'=' -f2 | tr -d '\"'"} password]} {
+    puts "ERROR: 无法从配置文件读取密码"
+    puts "使用默认密码: openEuler12#$"
+    set password "openEuler12#$"
+} else {
+    set password [string trim $password]
+    puts "\n从配置文件读取密码: $password"
+}
+
+# 连接到虚拟机SSH（端口2222）
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost
+expect {
+    "New password:" {
+        send "${password}\r"
+        expect "Retype new password:"
+        send "${password}\r"
+        expect "#"
+    }
+    "password:" {
+        send "${password}\r"
+        expect "#"
+    }
+    "#" {}
+    timeout {
+        puts "ERROR: SSH connection timeout"
+        exit 1
+    }
+}
+
+# 查看块设备信息
+send "lsblk\r"
+expect "#"
+
+# 创建挂载点目录
+send "mkdir -p /mnt/persistent\r"
+expect "#"
+
+# 挂载持久化磁盘
+send "mount /dev/vda /mnt/persistent\r"
+expect "#"
+
+# 查看磁盘使用情况
+send "df -h | grep vda\r"
+expect "#"
+
+# 输出检查信息
+send "echo '=== Checking persistence data ==='\r"
+expect "#"
+
+# 显示之前创建的测试文件内容（验证数据是否保留）
+send "cat /mnt/persistent/test_persistence.txt\r"
+expect "#"
+
+# 列出持久化目录内容
+send "ls -la /mnt/persistent/\r"
+expect "#"
+
+# 输出追加信息
+send "echo '=== Adding second run data ==='\r"
+expect "#"
+
+# 追加第二次运行数据到测试文件
+send "echo 'Persistence Test - Second Run - ' \$(date) >> /mnt/persistent/test_persistence.txt\r"
+expect "#"
+
+# 显示更新后的测试文件内容（包含第一次和第二次的数据）
+send "cat /mnt/persistent/test_persistence.txt\r"
+expect "#"
+
+# 退出SSH连接
+send "exit\r"
+expect eof

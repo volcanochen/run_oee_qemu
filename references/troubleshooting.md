@@ -402,6 +402,430 @@ qemu-img info scripts/<instance>_disk.img
 file scripts/<instance>_disk.img
 ```
 
+## 持久性测试
+
+### 快速开始
+
+使用持久性测试脚本验证QEMU虚拟机的持久化存储功能：
+
+```bash
+# 1. 启动虚拟机（启用持久化存储）
+./start_openeuler.sh user --persistent
+
+# 2. 设置持久化磁盘（格式化并挂载）
+./setup_persistence_final.exp
+
+# 3. 停止虚拟机
+./stop_openeuler.sh default
+
+# 4. 重新启动虚拟机
+./start_openeuler.sh user --persistent
+
+# 5. 验证数据是否保留
+./verify_persistence.exp
+```
+
+### 测试脚本说明
+
+| 脚本 | 功能 | 使用场景 |
+|------|------|----------|
+| `setup_persistence_final.exp` | 持久化磁盘设置 | 首次使用时格式化并挂载磁盘（推荐） |
+| `verify_persistence.exp` | 持久性验证 | 验证数据在重启后是否保留 |
+| `check_qemu.exp` | QEMU状态检查 | 检查QEMU运行状态和磁盘信息 |
+| `setup_persistence_v2.exp` | 持久化设置（密码过期处理） | 处理SSH密码过期场景 |
+
+### setup_persistence_final.exp
+
+**功能**：
+- 简单的SSH密码处理（2种场景）
+- 查看块设备信息（`lsblk`）
+- 格式化持久化磁盘为ext4文件系统
+- 创建挂载点目录（`/mnt/persistent`）
+- 挂载持久化磁盘
+- 创建测试文件并写入时间戳
+- 同步文件系统
+
+**使用方法**：
+```bash
+./setup_persistence_final.exp
+```
+
+**输出示例**：
+```
+qemu-aarch64 ~ # lsblk
+NAME    MAJ:MIN RM SIZE RO TYPE MOUNTPOINTS
+vda     254:0    0   2G  0 disk 
+
+qemu-aarch64 ~ # mkfs.ext4 /dev/vda
+mke2fs 1.47.0 (5-Feb-2023)
+Creating filesystem with 524288 4k blocks and 131072 inodes
+Filesystem UUID: 066889f0-f792-4cf8-8aa6-41d742645de1
+
+qemu-aarch64 ~ # mount /dev/vda /mnt/persistent
+qemu-aarch64 ~ # df -h | grep vda
+/dev/vda        2.0G   24K  1.8G   1% /mnt/persistent
+
+qemu-aarch64 ~ # echo 'Persistence Test - First Run - ' $(date) > /mnt/persistent/test_persistence.txt
+Persistence Test - First Run -  Thu Jan 1 00:00:32 UTC 1970
+```
+
+### verify_persistence.exp
+
+**功能**：
+- 挂载持久化磁盘
+- 显示之前创建的测试文件内容（验证数据是否保留）
+- 追加第二次运行数据到测试文件
+- 显示更新后的测试文件内容（包含第一次和第二次的数据）
+
+**使用方法**：
+```bash
+./verify_persistence.exp
+```
+
+**输出示例**：
+```
+qemu-aarch64 ~ # cat /mnt/persistent/test_persistence.txt
+Persistence Test - First Run -  Thu Jan 1 00:00:32 UTC 1970
+
+qemu-aarch64 ~ # echo 'Persistence Test - Second Run - ' $(date) >> /mnt/persistence/test_persistence.txt
+qemu-aarch64 ~ # cat /mnt/persistence/test_persistence.txt
+Persistence Test - First Run -  Thu Jan 1 00:00:32 UTC 1970
+Persistence Test - Second Run -  Thu Jan 1 00:00:20 UTC 1970
+```
+
+**验证成功标志**：第一次运行的数据在重启后完整保留！
+
+### check_qemu.exp
+
+**功能**：
+- 通过QEMU Monitor检查虚拟机运行状态
+- 检查块设备信息（包括持久化磁盘）
+- 自动退出Monitor
+
+**使用方法**：
+```bash
+./check_qemu.exp
+```
+
+**输出示例**：
+```
+VM status: running
+virtio0 (#block194): /home/volcano/myws/skills/run_oee_qemu/scripts/default_disk.img (qcow2)
+```
+
+### setup_persistence_v2.exp
+
+**功能**：
+- 自动处理SSH密码过期场景（5种密码提示）
+- 查看块设备信息（`lsblk`）
+- 查看磁盘分区信息（`fdisk -l /dev/vda`）
+- 格式化持久化磁盘为ext4文件系统
+- 创建挂载点目录（`/mnt/persistent`）
+- 挂载持久化磁盘
+- 创建测试文件并写入时间戳
+- 同步文件系统
+
+**与setup_persistence_final.exp的区别**：
+- ✅ 执行`fdisk -l /dev/vda`检查（更详细）
+- ⚠️ 更复杂，但功能相同
+- ✅ 推荐使用setup_persistence_final.exp（更简洁）
+
+## 常见问题和解决方案（持久性测试相关）
+
+### 15. SSH连接超时（持久性测试）
+
+**问题描述**：
+expect脚本连接SSH时出现超时错误，无法建立连接。
+
+**可能原因**：
+- QEMU虚拟机未完全启动，SSH服务未就绪
+- 端口配置错误
+- 超时时间设置过短
+
+**解决方案**：
+
+1. **增加超时时间**：
+   ```expect
+   set timeout 120  # 从60秒增加到120秒
+   ```
+
+2. **确保虚拟机已启动**：
+   ```bash
+   # 检查QEMU进程
+   ps aux | grep qemu-system-aarch64
+   
+   # 检查端口监听
+   netstat -tlnp | grep 2222
+   ```
+
+3. **使用端口检查脚本**：
+   ```bash
+   # 启动脚本会自动检查端口
+   ./start_openeuler.sh user --persistent
+   ```
+
+4. **添加重试机制**：
+   ```expect
+   set retry_count 0
+   while {$retry_count < 3} {
+       spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost
+       expect {
+           "#" {
+               break
+           }
+           timeout {
+               incr retry_count
+               if {$retry_count >= 3} {
+                   puts "ERROR: SSH connection timeout after 3 attempts"
+                   exit 1
+               }
+               puts "Retry $retry_count/3..."
+               sleep 5
+           }
+       }
+   }
+   ```
+
+### 16. "No such file or directory" 错误（持久性测试）
+
+**问题描述**：
+挂载持久化磁盘时出现路径错误：
+```
+mount: mounting /dev/vda on /mnt/data failed: No such file or directory
+```
+
+**可能原因**：
+- 挂载点目录不存在
+- 脚本中使用了错误的路径（如`/mnt/data`而非`/mnt/persistent`）
+
+**解决方案**：
+
+1. **创建挂载点目录**：
+   ```bash
+   mkdir -p /mnt/persistent
+   ```
+
+2. **在脚本中添加目录创建**：
+   ```expect
+   send "mkdir -p /mnt/persistent\r"
+   expect "#"
+   
+   send "mount /dev/vda /mnt/persistent\r"
+   expect "#"
+   ```
+
+3. **检查路径一致性**：
+   - 确保所有脚本使用相同的挂载点路径
+   - 推荐使用 `/mnt/persistent` 作为标准路径
+
+### 17. 密码过期场景处理（持久性测试）
+
+**问题描述**：
+首次登录时系统要求修改密码，expect脚本需要处理多种密码提示。
+
+**解决方案**：
+
+1. **使用setup_persistence_v2.exp**（完整处理）：
+   ```expect
+   # 处理5种密码提示
+   expect {
+       "Current password:" {
+           send "${old_pass}\r"
+           exp_continue
+       }
+       "New password:" {
+           send "${new_pass}\r"
+           exp_continue
+       }
+       "Retype new password:" {
+           send "${new_pass}\r"
+           exp_continue
+       }
+       "(root@localhost) Password:" {
+           send "${new_pass}\r"
+           exp_continue
+       }
+       "password:" {
+           send "${new_pass}\r"
+           exp_continue
+       }
+       "#" {}
+   }
+   ```
+
+2. **使用setup_persistence_final.exp**（简化处理）：
+   ```expect
+   # 处理2种主要密码提示
+   expect {
+       "New password:" {
+           send "openEuler12#\$\\r"
+           expect "Retype new password:"
+           send "openEuler12#\$\\r"
+       }
+       "password:" {
+           send "openEuler12#\$\\r"
+       }
+   }
+   ```
+
+3. **使用ssh_guest_check.sh**（自动处理）：
+   ```bash
+   ./ssh_guest_check.sh  # 自动处理密码交互
+   ```
+
+### 18. 持久性验证流程
+
+**问题描述**：
+需要验证虚拟机重启后数据是否保留。
+
+**解决方案**：
+
+1. **完整的验证流程**：
+   ```bash
+   # 步骤1: 启动虚拟机并设置持久化
+   ./start_openeuler.sh user --persistent
+   ./setup_persistence_final.exp
+   
+   # 步骤2: 停止虚拟机
+   ./stop_openeuler.sh default
+   
+   # 步骤3: 重新启动虚拟机
+   ./start_openeuler.sh user --persistent
+   
+   # 步骤4: 验证数据是否保留
+   ./verify_persistence.exp
+   ```
+
+2. **验证成功标志**：
+   ```
+   # 第一次运行写入的数据
+   Persistence Test - First Run -  Thu Jan 1 00:00:32 UTC 1970
+   
+   # 第二次运行追加的数据
+   Persistence Test - Second Run -  Thu Jan 1 00:00:20 UTC 1970
+   ```
+
+3. **检查持久化磁盘**：
+   ```bash
+   # 查看磁盘信息
+   ./check_qemu.exp
+   
+   # 查看磁盘使用情况
+   ssh -p 2222 root@localhost "df -h | grep vda"
+   ```
+
+### 19. 脚本重复和文件管理
+
+**问题描述**：
+存在多个功能相似的脚本，难以维护和使用。
+
+**解决方案**：
+
+1. **删除重复脚本**：
+   - ❌ `setup_and_test_persistence.exp` - 与setup_persistence_v2.exp重复
+   - ❌ `setup_persistence_v3.exp` - 与setup_persistence_v2.exp重复
+   - ❌ `test_persistence.exp` - 路径错误，已标记为弃用
+
+2. **保留推荐脚本**：
+   - ✅ `setup_persistence_final.exp` - 持久化设置（推荐）
+   - ✅ `verify_persistence.exp` - 持久性验证（推荐）
+   - ✅ `check_qemu.exp` - QEMU状态检查
+   - ✅ `setup_persistence_v2.exp` - 持久化设置（密码过期处理）
+
+3. **配置.gitignore**：
+   ```
+   # QEMU runtime files
+   *_disk.img
+   *_qemu.log
+   *_qemu.pid
+   ```
+
+### 20. expect脚本调试技巧
+
+**问题描述**：
+expect脚本运行时难以定位问题。
+
+**解决方案**：
+
+1. **启用详细输出**：
+   ```expect
+   exp_internal 1  # 显示expect内部匹配过程
+   log_user 1      # 显示所有交互内容
+   ```
+
+2. **添加调试信息**：
+   ```expect
+   puts "DEBUG: Connecting to SSH..."
+   spawn ssh -o StrictHostKeyChecking=no -p 2222 root@localhost
+   puts "DEBUG: Spawned process with PID: $spawn_id"
+   ```
+
+3. **使用超时和错误处理**：
+   ```expect
+   expect {
+       "#" {
+           puts "SUCCESS: Connected successfully"
+       }
+       timeout {
+           puts "ERROR: Connection timeout"
+           exit 1
+       }
+       eof {
+           puts "ERROR: Connection closed"
+           exit 1
+       }
+   }
+   ```
+
+4. **测试单个expect块**：
+   ```bash
+   # 测试SSH连接
+   expect -c '
+   set timeout 30
+   spawn ssh -o StrictHostKeyChecking=no -p 2222 root@localhost
+   expect "password:"
+   send "openEuler12#$\r"
+   expect "#"
+   send "exit\r"
+   '
+   ```
+
+## 故障排查清单
+
+当遇到问题时，按照以下顺序检查：
+
+1. **虚拟机状态**：
+   ```bash
+   ps aux | grep qemu-system-aarch64
+   cat default_qemu.pid
+   ```
+
+2. **端口监听**：
+   ```bash
+   netstat -tlnp | grep -E '2222|4444|8080'
+   ```
+
+3. **SSH连接**：
+   ```bash
+   ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost
+   ```
+
+4. **持久化磁盘**：
+   ```bash
+   ls -lh default_disk.img
+   qemu-img info default_disk.img
+   ```
+
+5. **日志文件**：
+   ```bash
+   tail -f default_qemu.log
+   ```
+
+6. **expect脚本测试**：
+   ```bash
+   ./check_qemu.exp
+   ```
+
 ## 获取帮助
 
 如果以上解决方案无法解决您的问题，请：

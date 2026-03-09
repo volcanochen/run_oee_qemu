@@ -1,4 +1,13 @@
 # QEMU runtime files
-scripts/default_disk.img
-scripts/default_qemu.log
-scripts/default_qemu.pid
+*_disk.img
+*_qemu.log
+*_qemu.pid
+
+# Temporary test files (keep for persistence testing)
+# test_persistence.exp
+# setup_persistence_final.exp
+# verify_persistence.exp
+# check_qemu.exp
+# setup_and_test_persistence.exp
+# setup_persistence_v2.exp
+# setup_persistence_v3.exp

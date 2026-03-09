@@ -1,0 +1,127 @@
+#!/usr/bin/expect
+
+# 持久化磁盘设置脚本（简化版）
+# 功能：格式化持久化磁盘、挂载并创建测试文件
+# 使用场景：首次使用持久化存储时执行（推荐版本）
+# 使用方法：./setup_persistence_final.exp
+# 注意：需要先启动QEMU虚拟机（./start_openeuler.sh user --persistent）
+# 与setup_and_test_persistence.exp的区别：不执行fdisk检查，更简洁
+
+set timeout 60
+
+# 密码配置
+set old_pass "openEuler12#$"
+set new_pass "openEuler12#$"
+
+# 配置文件路径
+set config_file "default_config.sh"
+set disk_img "default_disk.img"
+
+puts "\n=== 文件信息检查 ==="
+
+# 检查配置文件信息
+if {[catch {exec stat -c "%y" $config_file} config_mtime]} {
+    puts "配置: $config_file  ERROR: 无法获取修改时间"
+} else {
+    set config_mtime [string range $config_mtime 0 [expr [string first "." $config_mtime] - 1]]
+    if {[catch {exec sh -c "md5sum $config_file"} config_md5]} {
+        puts "配置: $config_file  $config_mtime  ERROR: 无法计算hash"
+    } else {
+        set config_hash [lindex [split $config_md5] 0]
+        puts "配置: $config_file  $config_mtime  $config_hash"
+    }
+}
+
+# 检查磁盘镜像信息
+if {[catch {exec stat -c "%y" $disk_img} disk_mtime]} {
+    puts "持久化存储: 已启用 ($disk_img)  ERROR: 无法获取修改时间"
+} else {
+    set disk_mtime [string range $disk_mtime 0 [expr [string first "." $disk_mtime] - 1]]
+    if {[catch {exec sh -c "md5sum $disk_img"} disk_md5]} {
+        puts "持久化存储: 已启用 ($disk_img)  $disk_mtime  ERROR: 无法计算hash"
+    } else {
+        set disk_hash [lindex [split $disk_md5] 0]
+        puts "持久化存储: 已启用 ($disk_img)  $disk_mtime  $disk_hash"
+    }
+}
+
+# 连接到虚拟机SSH（端口2222）
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost
+expect {
+    "New password:" {
+        send "${new_pass}\r"
+        expect "Retype new password:"
+        send "${new_pass}\r"
+        expect "#"
+    }
+    "password:" {
+        send "${new_pass}\r"
+        expect "#"
+    }
+    "#" {}
+    timeout {
+        puts "ERROR: SSH connection timeout"
+        exit 1
+    }
+}
+
+# 查看块设备信息
+send "lsblk\r"
+expect "#"
+
+# 格式化持久化磁盘为ext4文件系统
+send "mkfs.ext4 /dev/vda\r"
+expect {
+    "Proceed anyway? (y,N)" {
+        puts "\n⚠️  警告: 磁盘已包含文件系统"
+        puts "⚠️  继续格式化将丢失所有数据！"
+        puts "⚠️  如果需要保留数据，请先备份数据或取消操作\n"
+        send "y\r"
+        expect "#"
+    }
+    "#" {}
+}
+
+# 创建挂载点目录
+send "mkdir -p /mnt/persistent\r"
+expect "#"
+
+# 挂载持久化磁盘
+send "mount /dev/vda /mnt/persistent\r"
+expect "#"
+
+# 查看磁盘使用情况
+send "df -h | grep vda\r"
+expect "#"
+
+# 创建测试文件并写入时间戳
+send "echo 'Persistence Test - First Run - ' \$(date) > /mnt/persistent/test_persistence.txt\r"
+expect "#"
+
+# 显示测试文件内容
+send "cat /mnt/persistent/test_persistence.txt\r"
+expect "#"
+
+# 列出持久化目录内容
+send "ls -la /mnt/persistent/\r"
+expect "#"
+
+# 同步文件系统，确保数据写入磁盘
+send "sync\r"
+expect "#"
+
+# 退出SSH连接
+send "exit\r"
+expect eof
+
+# 更新配置文件中的密码
+puts "\n=== 更新配置文件中的密码 ==="
+puts "新密码: ${new_pass}"
+puts "配置文件: ${config_file}"
+
+# 使用sed命令更新配置文件
+exec sed -i "s/^ROOT_PASSWORD=.*/ROOT_PASSWORD=\"${new_pass}\"/" $config_file
+
+# 验证密码是否已更新
+exec sh -c "grep '^ROOT_PASSWORD=' ${config_file}"
+puts "\n✓ 配置文件已更新"

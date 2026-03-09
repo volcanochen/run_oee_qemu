@@ -18,6 +18,8 @@ cd scripts
 - `tap`: TAP接口网络（需要root权限）
 - `config_file`: 使用配置文件（如 `scenario1_config.sh`）
 
+**遇到问题？** 请参考 [故障排除文档](references/troubleshooting.md) 获取详细的解决方案。
+
 ### 2. 访问虚拟机
 
 **SSH访问**：
@@ -26,7 +28,7 @@ ssh -p <SSH_PORT> root@localhost
 # 密码: openEuler12#$
 ```
 
-> **注意**：首次登录时系统可能要求修改密码。请参考"首次登录"部分了解如何正确处理密码验证。
+> **注意**：首次登录时系统可能要求修改密码。请参考 [SSH访问指南](references/ssh_access.md) 了解如何正确处理密码验证。
 
 **QEMU Monitor**：
 ```bash
@@ -37,10 +39,11 @@ telnet localhost <MONITOR_PORT>
 ### 3. 停止虚拟机
 
 ```bash
-./stop_openeuler.sh [instance_name]
+./stop_openeuler.sh [instance_name|PID]
 ```
 
 - `instance_name`: 实例名称（如 `scenario1`），默认为 `default`
+- `PID`: 进程ID（如 `12345`）
 
 ### 4. 网络检查
 
@@ -87,222 +90,65 @@ telnet localhost <MONITOR_PORT>
    ```
    该脚本会自动处理密码交互并执行网络检查。
 
-3. **手动使用 expect 处理**：
-   ```bash
-   expect -c '
-   set timeout 60
-   spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost
-   expect {
-       "New password:" {
-           send "openEuler12#$\r"
-           expect "Retype new password:"
-           send "openEuler12#$\r"
-           expect "#"
-       }
-       "(root@localhost) Password:" {
-           send "openEuler12#$\r"
-           expect "#"
-       }
-       "password:" {
-           send "openEuler12#$\r"
-           expect "#"
-       }
-       "#" {}
-       timeout {
-           puts "ERROR: SSH connection timeout"
-           exit 1
-       }
-   }
-   send "uname -a\r"
-   expect "#"
-   send "exit\r"
-   expect eof
-   '
-   ```
-
-4. **使用 QEMU Monitor 登录**（无需密码）：
+3. **使用 QEMU Monitor 登录**（无需密码）：
    ```bash
    telnet localhost <MONITOR_PORT>
    # 按 Ctrl+] 退出，然后输入 quit
    ```
 
-### SSH 访问脚本示例
-
-**自动处理密码验证和修改的完整脚本**：
-
-```bash
-#!/bin/bash
-# SSH 访问脚本 - 自动处理密码验证
-
-SSH_PORT=${1:-2222}
-TIMEOUT=${2:-60}
-
-expect -c "
-set timeout $TIMEOUT
-spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $SSH_PORT root@localhost
-expect {
-    \"New password:\" {
-        send \"openEuler12#\$\\r\"
-        expect \"Retype new password:\"
-        send \"openEuler12#\$\\r\"
-        expect \"#\"
-    }
-    \"(root@localhost) Password:\" {
-        send \"openEuler12#\$\\r\"
-        expect \"#\"
-    }
-    \"password:\" {
-        send \"openEuler12#\$\\r\"
-        expect \"#\"
-    }
-    \"#\" {}
-    timeout {
-        puts \"ERROR: SSH connection timeout\"
-        exit 1
-    }
-}
-send \"uname -a\\r\"
-expect \"#\"
-send \"cat /etc/os-release\\r\"
-expect \"#\"
-send \"ip addr show\\r\"
-expect \"#\"
-send \"netstat -tlnp\\r\"
-expect \"#\"
-send \"exit\\r\"
-expect eof
-"
-```
-
-**使用方法**：
-```bash
-./ssh_access.sh [SSH_PORT] [TIMEOUT]
-# 默认: SSH_PORT=2222, TIMEOUT=60
-```
-
-## 多实例配置
-
-### 配置文件结构
-
-每个实例使用独立的配置文件，实现资源隔离：
-
-```
-scripts/
-├── default_config.sh      # 默认配置（单实例）
-├── example_config.sh      # 示例配置
-├── scenario1_config.sh    # 场景1配置
-└── <your_scenario>_config.sh  # 自定义配置
-```
-
-### 配置文件示例
-
-```bash
-# 实例配置
-INSTANCE_NAME="scenario1"
-INSTANCE_ID="3"
-
-# 资源路径
-IMAGE_DIR="/home/volcano/myws/oee2403/build/qemu-aarch64/output/20260127163708"
-KERNEL_PATH="$IMAGE_DIR/zImage"
-ROOTFS_PATH="/home/volcano/myws/oee2403/build/qemu-aarch64/tmp/deploy/images/qemu-aarch64/openeuler-image-qemu-aarch64.cpio.gz"
-DISK_IMG="${INSTANCE_NAME}_disk.img"
-
-# QEMU配置
-QEMU_BINARY=$(which qemu-system-aarch64 2>/dev/null || echo "/usr/bin/qemu-system-aarch64")
-
-# 网络配置 (避免端口冲突)
-SSH_PORT=2224
-HTTP_PORT=8082
-MONITOR_PORT=4446
-
-# 硬件配置
-CPU_CORES=4
-MEMORY_SIZE=2048
-```
-
-### 启动不同实例
-
-```bash
-# 使用默认配置启动
-./start_openeuler.sh user
-
-# 使用自定义配置启动
-./start_openeuler.sh scenario1_config.sh
-
-# 停止特定实例
-./stop_openeuler.sh scenario1
-```
+详细说明请参考 [SSH访问指南](references/ssh_access.md)。
 
 ## 目录结构
 
 ```
 run_oee_qemu/
-└── scripts/
-    ├── start_openeuler.sh         # 启动脚本（主入口）
-    ├── stop_openeuler.sh          # 停止脚本
-    ├── qemu-ifup                  # TAP网络配置脚本
-    ├── default_config.sh          # 默认配置文件
-    ├── example_config.sh          # 示例配置文件
-    ├── scenario1_config.sh        # 场景1配置文件
-    ├── <instance>_config.sh       # 自定义配置文件
-    ├── ssh_guest_check.sh         # 网络检查脚本
-    ├── check_network.sh           # 网络检查辅助脚本
-    ├── <instance>_disk.img        # 持久存储磁盘镜像（qcow2）
-    ├── <instance>_qemu.pid        # QEMU进程ID文件
-    └── <instance>_qemu.log        # QEMU运行日志
+├── SKILL.md                      # 本文档
+├── README.md                     # 项目说明
+└── references/                   # 详细文档目录
+    ├── ssh_access.md             # SSH访问指南
+    ├── configuration.md         # 配置说明
+    ├── multi_instance.md        # 多实例配置指南
+    └── troubleshooting.md      # 故障排除文档
+scripts/
+├── start_openeuler.sh         # 启动脚本（主入口）
+├── stop_openeuler.sh          # 停止脚本
+├── qemu-ifup                 # TAP网络配置脚本
+├── default_config.sh          # 默认配置文件
+├── example_config.sh          # 示例配置文件
+├── scenario1_config.sh        # 场景1配置文件
+├── <instance>_config.sh       # 自定义配置文件
+├── ssh_guest_check.sh        # 网络检查脚本
+├── check_network.sh          # 网络检查辅助脚本
+├── setup_persistence_final.exp  # 持久化磁盘设置脚本
+├── verify_persistence.exp     # 持久性验证脚本
+├── <instance>_disk.img       # 持久存储磁盘镜像（qcow2）
+├── <instance>_qemu.pid       # QEMU进程ID文件
+└── <instance>_qemu.log       # QEMU运行日志
 ```
 
-## 配置说明
+## 详细文档索引
 
-### 硬件配置
-- 机器类型: virt (ARM64通用平台)
-- CPU: cortex-a53
-- 核心数: 可配置（默认2核）
-- 内存: 可配置（默认1024MB）
+### 核心功能文档
 
-### 网络配置
-- **用户模式**: 自动NAT，端口转发
-- **TAP模式**: 桥接到br0，直接网络访问
+- **[SSH访问指南](references/ssh_access.md)** - SSH连接、密码处理、常用命令、故障排除
+- **[配置说明](references/configuration.md)** - 硬件配置、网络配置、存储配置、配置文件示例
+- **[多实例配置指南](references/multi_instance.md)** - 多实例配置、端口规划、资源隔离、使用场景
 
-### 端口映射
-- Host `<SSH_PORT>` → Guest 22 (SSH)
-- Host `<HTTP_PORT>` → Guest 80 (HTTP)
-- Host `<MONITOR_PORT>` → QEMU Monitor
+### 故障排除文档
 
-### 存储配置
-- 根文件系统: initramfs (只读)
-- 持久存储: /dev/vda (2GB qcow2)
-
-## 详细文档
-
-- **配置说明**: See [configuration.md](references/configuration.md) for detailed hardware, network, and storage configuration
-- **故障排除**: See [troubleshooting.md](references/troubleshooting.md) for common issues and solutions
+- **[故障排除文档](references/troubleshooting.md)** - 常见问题和解决方案，包括：
+  - 端口冲突问题
+  - SSH连接问题
+  - 网络配置问题
+  - 持久化存储问题
+  - 多实例管理问题
+  - IDE沙箱环境问题
 
 ## 命令行参数
 
 ### start_openeuler.sh
 
 启动openEuler嵌入式系统QEMU虚拟机的主脚本。
-
-**功能概述：**
-- 自动检查端口占用情况，避免冲突
-- 支持用户模式和TAP模式两种网络配置
-- 支持多实例运行，每个实例独立配置
-- 自动生成QEMU启动参数并后台运行
-- 可选自动获取Guest OS版本信息
-- 可选自动检查Guest OS网络配置
-- 提供详细的调试信息输出
-
-**工作流程：**
-1. 解析命令行参数
-2. 加载配置文件（默认或指定）
-3. 检查必要文件是否存在（内核、根文件系统等）
-4. **启动前端口检查** - 检测端口是否被占用
-5. 构建QEMU启动参数并启动虚拟机
-6. **启动后端口检查** - 验证端口是否正常监听
-7. 查找并验证QEMU进程
-8. （可选）获取Guest OS版本信息
-9. （可选）执行Guest OS网络检查
 
 **使用方法：**
 
@@ -331,20 +177,11 @@ run_oee_qemu/
 # 启动并显示版本信息
 ./start_openeuler.sh user -g
 
-# 启动并显示详细调试信息
-./start_openeuler.sh user -g -v
-
-# 启动并检查网络配置
-./start_openeuler.sh user -n
-
-# 启动并同时检查网络和显示版本
-./start_openeuler.sh user -g -n
+# 启用持久化存储
+./start_openeuler.sh user --persistent
 
 # 使用自定义配置启动
 ./start_openeuler.sh scenario1_config.sh
-
-# 启用持久化存储
-./start_openeuler.sh user --persistent
 
 # 使用TAP网络模式（需要root）
 sudo ./start_openeuler.sh tap
@@ -354,76 +191,64 @@ sudo ./start_openeuler.sh tap
 
 ```
 启动openEuler QEMU虚拟机...
-  实例: default                    # 实例名称
-  配置: /path/to/config.sh         # 配置文件路径
+  实例: default
+  配置: /path/to/config.sh  时间戳  MD5_hash
+  持久化存储: 已启用 (/path/to/disk.img)  时间戳  MD5_hash
 
 === 启动前端口检查 ===
-[OK] 端口 2222 可用               # SSH端口
-[OK] 端口 4444 可用               # Monitor端口
-[OK] 端口 8080 可用               # HTTP端口
+[OK] 端口 2222 可用
+[OK] 端口 4444 可用
+[OK] 端口 8080 可用
 
 === 启动后端口检查 ===
-[OK] 端口 2222 已监听 (PID: 1234)  # 端口正常监听
+[OK] 端口 2222 已监听 (PID: 1234)
 [OK] 端口 4444 已监听 (PID: 1234)
 [OK] 端口 8080 已监听 (PID: 1234)
 
-QEMU运行中，PID: 1234              # QEMU进程ID
-停止: /path/to/stop_openeuler.sh default  # 停止命令
-
-=== Guest OS 已启动 ===            # 使用 -g 参数时显示
-等待SSH服务就绪...
-获取系统版本信息...
-
-=== 系统版本信息 ===
-Linux qemu-aarch64 5.10.0-openeuler ...
-ID=openeuler
-NAME="openEuler Embedded..."
-VERSION="24.03-LTS..."
-
-=== 网络检查 ===                   # 使用 -n 参数时显示
-=== openEuler Guest OS 网络检查 ===
-SSH 端口: 2222
-
-=== 处理密码交互 ===
-尝试 1/3: 连接 SSH...
-✓ 密码交互成功
-
-=== 执行网络检查 ===
-尝试 1/3: 连接 SSH...
-✓ 网络检查成功
+QEMU运行中，PID: 1234
+停止命令: /path/to/stop_openeuler.sh default
+停止命令: /path/to/stop_openeuler.sh 1234
 ```
-
-**错误处理：**
-
-- 端口被占用时，显示占用进程PID并退出
-- 配置文件不存在时，提示创建方法
-- 内核/根文件系统缺失时，提示文件路径
-- QEMU启动失败时，显示诊断信息和日志
 
 ### stop_openeuler.sh
 
+停止QEMU虚拟机的脚本。
+
+**使用方法：**
+
 ```bash
-./stop_openeuler.sh [instance_name]
+./stop_openeuler.sh [instance_name|PID]
 ```
+
+**参数说明：**
 
 | 参数 | 说明 |
 |------|------|
-| `instance_name` | 实例名称，默认为 `default` |
+| `instance_name` | 实例名称（如 `default`、`scenario1`），默认为 `default` |
+| `PID` | 进程ID（如 `12345`），直接按PID停止 |
+
+**使用示例：**
+
+```bash
+# 按实例名称停止
+./stop_openeuler.sh default
+./stop_openeuler.sh scenario1
+
+# 按PID停止
+./stop_openeuler.sh 12345
+```
 
 ### ssh_guest_check.sh
 
 自动检查Guest OS网络配置的脚本。
-
-**功能概述：**
-- 自动处理SSH密码过期场景（旧密码->新密码->确认新密码）
-- 执行网络检查命令（ping、curl、nslookup等）
-- 显示网络配置信息（DNS、路由、端口等）
 
 **使用方法：**
 
 ```bash
 ./ssh_guest_check.sh [ssh_port] [timeout]
 ```
+
+**参数说明：**
 
 | 参数 | 说明 |
 |------|------|
@@ -440,29 +265,144 @@ SSH 端口: 2222
 ./ssh_guest_check.sh 2222 60
 ```
 
-**输出示例：**
+## 配置概览
 
-```
-=== openEuler Guest OS 网络检查 ===
-SSH 端口: 2222
+### 硬件配置
+- 机器类型: virt (ARM64通用平台)
+- CPU: cortex-a53
+- 核心数: 可配置（默认2核）
+- 内存: 可配置（默认1024MB）
 
-=== 处理密码交互 ===
-尝试 1/3: 连接 SSH...
-✓ 密码交互成功
+### 网络配置
+- **用户模式**: 自动NAT，端口转发
+- **TAP模式**: 桥接到br0，直接网络访问
 
-=== 执行网络检查 ===
-尝试 1/3: 连接 SSH...
-✓ 网络检查成功
-```
+### 端口映射
+- Host `<SSH_PORT>` → Guest 22 (SSH)
+- Host `<HTTP_PORT>` → Guest 80 (HTTP)
+- Host `<MONITOR_PORT>` → QEMU Monitor
 
-**可复用函数：**
+### 存储配置
+- 根文件系统: initramfs (只读)
+- 持久存储: /dev/vda (2GB qcow2)
 
-脚本提供了 `ssh_password_expect()` 函数，可被其他脚本复用：
+详细配置说明请参考 [配置说明](references/configuration.md)。
+
+## 多实例配置
+
+支持同时运行多个QEMU虚拟机实例，每个实例拥有独立的配置、资源和网络端口。
+
+**基本用法：**
 
 ```bash
-# 只处理密码交互
-ssh_password_expect 2222 60 "oldpass" "newpass"
+# 启动默认实例
+./start_openeuler.sh user
 
-# 处理密码并执行命令
-ssh_password_expect 2222 60 "oldpass" "newpass" "echo SSH_OK; uname -a"
+# 启动场景1实例
+./start_openeuler.sh scenario1_config.sh
+
+# 停止特定实例
+./stop_openeuler.sh scenario1
 ```
+
+详细说明请参考 [多实例配置指南](references/multi_instance.md)。
+
+## 常见问题
+
+### QEMU进程在IDE沙箱中无法持续运行
+
+**问题**：在IDE沙箱或TraTerminal中启动QEMU后，进程立即被终止。
+
+**解决方案**：
+- 在真实Linux终端中执行脚本
+- 或关闭IDE沙箱后再运行
+
+详细说明请参考 [故障排除文档](references/troubleshooting.md)。
+
+### SSH连接超时
+
+**问题**：无法SSH连接到虚拟机。
+
+**解决方案**：
+1. 检查QEMU虚拟机是否正在运行
+2. 检查端口是否正确
+3. 使用expect脚本自动处理密码交互
+4. 查看虚拟机日志
+
+详细说明请参考 [SSH访问指南](references/ssh_access.md) 和 [故障排除文档](references/troubleshooting.md)。
+
+### 端口冲突
+
+**问题**：启动时提示端口被占用。
+
+**解决方案**：
+1. 检查端口占用：`netstat -tlnp | grep <PORT>`
+2. 停止占用进程：`kill <PID>`
+3. 修改配置文件中的端口
+4. 重新启动实例
+
+详细说明请参考 [故障排除文档](references/troubleshooting.md)。
+
+## 使用场景
+
+### 场景1：开发和测试openEuler嵌入式系统
+
+```bash
+# 启动虚拟机
+./start_openeuler.sh user
+
+# SSH访问
+ssh -p 2222 root@localhost
+
+# 开发和测试...
+# 停止虚拟机
+./stop_openeuler.sh default
+```
+
+### 场景2：验证内核修改和驱动程序
+
+```bash
+# 启用持久化存储
+./start_openeuler.sh user --persistent
+
+# 加载新内核和驱动
+# 验证功能
+# 停止虚拟机
+./stop_openeuler.sh default
+```
+
+### 场景3：网络服务开发和调试
+
+```bash
+# 启动虚拟机
+./start_openeuler.sh user -n
+
+# 脚本自动检查网络配置
+# 开发和调试网络服务
+# 停止虚拟机
+./stop_openeuler.sh default
+```
+
+### 场景4：多实例隔离测试
+
+```bash
+# 终端1：启动实例1
+./start_openeuler.sh scenario1_config.sh
+
+# 终端2：启动实例2
+./start_openeuler.sh scenario2_config.sh
+
+# 并行测试多个场景
+# 停止实例
+./stop_openeuler.sh scenario1
+./stop_openeuler.sh scenario2
+```
+
+详细使用场景请参考 [多实例配置指南](references/multi_instance.md)。
+
+## 获取帮助
+
+- **遇到问题？** 请参考 [故障排除文档](references/troubleshooting.md) 获取详细的解决方案
+- **SSH访问问题** 请参考 [SSH访问指南](references/ssh_access.md)
+- **配置问题** 请参考 [配置说明](references/configuration.md)
+- **多实例管理** 请参考 [多实例配置指南](references/multi_instance.md)

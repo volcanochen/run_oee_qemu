@@ -2,6 +2,8 @@
 
 启动openEuler嵌入式系统QEMU虚拟机，支持用户模式网络和TAP接口网络，包含持久存储、端口转发、QEMU Monitor访问、网络检查等功能。
 
+**遇到问题？** 请参考 [故障排除文档](references/troubleshooting.md) 获取详细的解决方案。
+
 ## 功能特性
 
 - ✅ 自动检查端口占用情况，避免冲突
@@ -102,6 +104,36 @@ telnet localhost 4444
 1. 处理SSH密码过期场景（自动修改密码）
 2. 执行网络检查命令（ping、curl、nslookup等）
 3. 显示网络配置信息
+
+### 持久性测试
+
+使用持久性测试脚本验证QEMU虚拟机的持久化存储功能：
+
+```bash
+# 1. 启动虚拟机（启用持久化存储）
+./start_openeuler.sh user --persistent
+
+# 2. 设置持久化磁盘（格式化并挂载）
+./setup_persistence_final.exp
+
+# 3. 停止虚拟机
+./stop_openeuler.sh default
+
+# 4. 重新启动虚拟机
+./start_openeuler.sh user --persistent
+
+# 5. 验证数据是否保留
+./verify_persistence.exp
+```
+
+**测试脚本说明**：
+
+| 脚本 | 功能 | 使用场景 |
+|------|------|----------|
+| `setup_persistence_final.exp` | 持久化磁盘设置 | 首次使用时格式化并挂载磁盘（推荐） |
+| `verify_persistence.exp` | 持久性验证 | 验证数据在重启后是否保留 |
+| `check_qemu.exp` | QEMU状态检查 | 检查QEMU运行状态和磁盘信息 |
+| `setup_persistence_v2.exp` | 持久化设置（密码过期处理） | 处理SSH密码过期场景 |
 
 ## 使用示例
 
@@ -211,6 +243,17 @@ scripts/
 
 ## 故障排除
 
+详细的问题诊断和解决方案，请参考 [故障排除文档](references/troubleshooting.md)。
+
+### 常见问题快速参考
+
+| 问题 | 快速解决方案 | 详细文档 |
+|------|------------|----------|
+| 端口占用 | `./stop_openeuler.sh default` | [故障排除文档](references/troubleshooting.md) |
+| 首次登录密码修改 | `./start_openeuler.sh user -g` | [SSH访问指南](references/ssh_access.md) |
+| SSH连接超时 | 检查QEMU运行状态和端口 | [SSH访问指南](references/ssh_access.md) |
+| 持久化存储问题 | 使用 `setup_persistence_final.exp` 和 `verify_persistence.exp` | [故障排除文档](references/troubleshooting.md) |
+
 ### 端口占用
 
 ```bash
@@ -249,17 +292,122 @@ run_oee_qemu/
 ├── README.md                   # 本文件
 ├── SKILL.md                    # 详细文档
 ├── .gitignore                  # Git忽略配置
-└── scripts/
-    ├── start_openeuler.sh      # 启动脚本
-    ├── stop_openeuler.sh       # 停止脚本
-    ├── qemu-ifup               # TAP网络配置
-    ├── default_config.sh       # 默认配置
-    ├── <instance>_config.sh    # 自定义配置
-    ├── ssh_guest_check.sh      # 网络检查脚本
-    ├── check_network.sh        # 网络检查辅助脚本
-    ├── <instance>_disk.img     # 持久存储镜像
-    ├── <instance>_qemu.pid     # 进程ID文件
-    └── <instance>_qemu.log     # 运行日志
+└── references/                   # 详细文档目录
+    ├── ssh_access.md             # SSH访问指南
+    ├── configuration.md         # 配置说明
+    ├── multi_instance.md        # 多实例配置指南
+    └── troubleshooting.md      # 故障排除文档
+scripts/
+├── start_openeuler.sh      # 启动脚本（核心）
+├── stop_openeuler.sh       # 停止脚本（核心）
+├── qemu-ifup               # TAP网络配置（核心）
+├── default_config.sh       # 默认配置（核心）
+├── example_config.sh      # 示例配置（参考）
+├── scenario1_config.sh    # 场景1配置（参考）
+├── ssh_guest_check.sh     # 网络检查脚本（工具）
+├── check_network.sh       # 网络检查辅助（工具）
+├── setup_persistence_final.exp  # 持久化设置（推荐）
+├── verify_persistence.exp # 持久性验证（推荐）
+├── <instance>_disk.img     # 持久存储镜像（运行时生成）
+├── <instance>_qemu.pid     # 进程ID文件（运行时生成）
+└── <instance>_qemu.log     # 运行日志（运行时生成）
+```
+
+## 详细文档
+
+### 核心功能文档
+
+- **[SSH访问指南](references/ssh_access.md)** - SSH连接、密码处理、常用命令、故障排除
+- **[配置说明](references/configuration.md)** - 硬件配置、网络配置、存储配置、配置文件示例
+- **[多实例配置指南](references/multi_instance.md)** - 多实例配置、端口规划、资源隔离、使用场景
+
+### 故障排除文档
+
+- **[故障排除文档](references/troubleshooting.md)** - 常见问题和解决方案，包括：
+  - 端口冲突问题
+  - SSH连接问题
+  - 网络配置问题
+  - 持久化存储问题
+  - 多实例管理问题
+  - IDE沙箱环境问题
+
+## 文件管理说明
+
+### 核心文件（必须版本管理）
+
+以下文件是工具的核心组件，**必须**纳入版本管理：
+
+| 文件 | 说明 | 重要性 |
+|------|------|--------|
+| `start_openeuler.sh` | QEMU虚拟机启动脚本 | ⭐⭐⭐ |
+| `stop_openeuler.sh` | QEMU虚拟机停止脚本 | ⭐⭐⭐ |
+| `qemu-ifup` | TAP网络配置脚本 | ⭐⭐⭐ |
+| `default_config.sh` | 默认配置文件 | ⭐⭐⭐ |
+| `ssh_guest_check.sh` | SSH网络检查脚本 | ⭐⭐ |
+| `check_network.sh` | 网络检查辅助脚本 | ⭐⭐ |
+
+### 参考配置文件（建议版本管理）
+
+以下文件是配置示例，**建议**纳入版本管理：
+
+| 文件 | 说明 | 重要性 |
+|------|------|--------|
+| `example_config.sh` | 配置文件示例 | ⭐⭐ |
+| `scenario1_config.sh` | 场景1配置示例 | ⭐ |
+
+### 验证测试脚本（可选版本管理）
+
+以下脚本用于功能验证和持久性测试，**可选**纳入版本管理：
+
+| 文件 | 说明 | 用途 |
+|------|------|------|
+| `test_persistence.exp` | 持久性基础测试 | 验证持久化功能 |
+| `setup_persistence_final.exp` | 持久化磁盘设置 | 格式化并挂载持久化磁盘 |
+| `verify_persistence.exp` | 持久性验证 | 验证数据在重启后是否保留 |
+| `check_qemu.exp` | QEMU状态检查 | 检查QEMU运行状态 |
+| `setup_and_test_persistence.exp` | 持久化完整测试 | 完整的持久化测试流程 |
+| `setup_persistence_v2.exp` | 持久化测试v2 | 持久化测试变体 |
+| `setup_persistence_v3.exp` | 持久化测试v3 | 持久化测试变体 |
+
+**使用场景**：
+- 验证QEMU虚拟机的持久化存储功能
+- 测试驱动程序或应用程序的数据持久性
+- 回归测试和功能验证
+
+### 运行时生成文件（不纳入版本管理）
+
+以下文件在运行时自动生成，**不应**纳入版本管理（已在.gitignore中配置）：
+
+| 文件模式 | 说明 | 生成时机 |
+|----------|------|----------|
+| `*_disk.img` | 持久存储磁盘镜像 | 首次启动时自动创建 |
+| `*_qemu.pid` | QEMU进程ID文件 | 启动时生成，停止时删除 |
+| `*_qemu.log` | QEMU运行日志 | 运行时持续写入 |
+
+### 版本管理建议
+
+1. **核心文件**：始终纳入Git版本控制
+2. **配置文件**：纳入版本控制，但敏感信息（如密码）应使用环境变量
+3. **测试脚本**：根据团队需求决定是否纳入版本控制
+4. **运行时文件**：使用.gitignore排除，避免提交大文件和临时文件
+
+### .gitignore 配置
+
+```gitignore
+# QEMU runtime files
+*_disk.img
+*_qemu.log
+*_qemu.pid
+
+# Temporary test files (keep for persistence testing)
+# 如需排除测试脚本，取消以下注释
+# test_persistence.exp
+# setup_persistence_final.exp
+# verify_persistence.exp
+# check_qemu.exp
+# setup_and_test_persistence.exp
+# setup_persistence_v2.exp
+# setup_persistence_v3.exp
 ```
 
 ## 注意事项
