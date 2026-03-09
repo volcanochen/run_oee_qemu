@@ -6,9 +6,9 @@ INSTANCE_NAME="default"
 INSTANCE_ID="1"
 
 # 资源路径
-IMAGE_DIR="/home/volcano/myws/oee2403/build/qemu-aarch64/output/20260127163708"
+IMAGE_DIR="/home/volcano/myws/oee2403/build/qemu-aarch64/output/20260308100112"
 KERNEL_PATH="$IMAGE_DIR/zImage"
-ROOTFS_PATH="/home/volcano/myws/oee2403/build/qemu-aarch64/tmp/deploy/images/qemu-aarch64/openeuler-image-qemu-aarch64.cpio.gz"
+ROOTFS_PATH="/home/volcano/myws/oee2403/build/qemu-aarch64/tmp/work/qemu_aarch64-openeuler-linux/openeuler-image/1.0-r0/deploy-openeuler-image-image-complete/openeuler-image-qemu-aarch64.cpio.gz"
 
 # 持久化存储配置
 # USE_PERSISTENT_STORAGE: 是否使用持久化存储 (true/false)

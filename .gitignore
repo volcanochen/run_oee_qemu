@@ -1,0 +1,4 @@
+# QEMU runtime files
+scripts/default_disk.img
+scripts/default_qemu.log
+scripts/default_qemu.pid

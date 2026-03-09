@@ -12,7 +12,8 @@ CONFIG_FILE=""
 USE_PERSISTENT_STORAGE="false"  # 默认不持久化
 PERSISTENT_SET_FROM_CMDLINE="false"  # 标记是否从命令行设置了持久化
 VERBOSE="false"  # 默认不打印详细调试信息
-SHOW_VERSION="false"  # 默认不打印系统版本信息
+SHOW_GUEST_OS_INFO="false"  # 默认不打印系统版本信息
+CHECK_NETWORK="false"  # 默认不检查网络配置
 
 # 解析参数
 while [[ $# -gt 0 ]]; do
@@ -27,7 +28,11 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --guest-os-info|-g)
-            SHOW_VERSION="true"
+            SHOW_GUEST_OS_INFO="true"
+            shift
+            ;;
+        --check-network|-n)
+            CHECK_NETWORK="true"
             shift
             ;;
         user)
@@ -43,13 +48,14 @@ while [[ $# -gt 0 ]]; do
                 CONFIG_FILE="$1"
             else
                 # 输出使用帮助信息
-                echo "用法: $0 [user|tap|config_file] [--persistent] [--verbose] [--guest-os-info]"
+                echo "用法: $0 [user|tap|config_file] [--persistent] [--verbose] [--guest-os-info] [--check-network]"
                 echo "  user: 使用用户模式网络 (默认)"
                 echo "  tap:  使用TAP接口网络"
                 echo "  config_file: 使用配置文件"
                 echo "  --persistent: 启用持久化存储 (默认不启用)"
                 echo "  --verbose, -v: 显示详细调试信息"
                 echo "  --guest-os-info, -g: 启动后显示Guest OS版本信息"
+                echo "  --check-network, -n: 启动后检查网络配置"
                 exit 1  # 参数错误则退出
             fi
             shift
@@ -167,31 +173,11 @@ fi
 # 网络配置脚本 (仅在TAP模式下需要)
 if [ "$NETWORK_MODE" == "tap" ]; then
     NET_SCRIPT="$SCRIPT_DIR/qemu-ifup"  # TAP网络配置脚本路径（基于脚本位置）
-    cat > "$NET_SCRIPT" << 'EOF'  # 创建网络配置脚本
-#!/bin/bash
-# QEMU网络配置脚本 - 用于TAP接口设置
-
-if [ -n "$1" ]; then
-  # 检查网桥是否存在
-  if ! brctl show | grep -q "br0"; then
-    # 创建网桥
-    sudo ip link add br0 type bridge
-    sudo ip addr add 192.168.100.1/24 dev br0
-    sudo ip link set br0 up
-  fi
-  
-  # 创建TAP接口
-  sudo ip tuntap add dev $1 mode tap
-  sudo ip link set $1 up
-  sudo ip addr flush dev $1
-  sudo brctl addif br0 $1
-  sudo dhclient -nw $1 2>/dev/null || true
-else
-  echo "错误: 未指定接口名称"
-  exit 1
-fi
-EOF
-
+    if [ ! -f "$NET_SCRIPT" ]; then
+        echo "错误: 网络配置脚本不存在: $NET_SCRIPT"
+        echo "请先运行: ./qemu-ifup <interface_name>"
+        exit 1
+    fi
     chmod +x "$NET_SCRIPT"
 fi
 
@@ -353,7 +339,7 @@ get_guest_os_version() {
 }
 
 # 如果需要显示版本信息
-if [ "$SHOW_VERSION" = "true" ]; then
+if [ "$SHOW_GUEST_OS_INFO" = "true" ]; then
     echo ""
     echo "=== Guest OS 已启动 ==="
     
@@ -372,5 +358,13 @@ if [ "$SHOW_VERSION" = "true" ]; then
     else
         echo "$GUEST_OS_VERSION" | grep -E "^(Linux|ID=|NAME=|VERSION=|PRETTY_NAME=)" | head -10
     fi
+    echo ""
+fi
+
+# 如果需要检查网络配置
+if [ "$CHECK_NETWORK" = "true" ] && [ -f "$SCRIPT_DIR/check_network.sh" ]; then
+    echo ""
+    echo "=== 网络配置检查 ==="
+    bash "$SCRIPT_DIR/check_network.sh" "$SSH_PORT" 30 5 3
     echo ""
 fi

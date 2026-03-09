@@ -2,17 +2,20 @@
 # QEMU网络配置脚本 - 用于TAP接口设置
 
 if [ -n "$1" ]; then
+  # 检查网桥是否存在
   if ! brctl show | grep -q "br0"; then
+    # 创建网桥
     sudo ip link add br0 type bridge
     sudo ip addr add 192.168.100.1/24 dev br0
     sudo ip link set br0 up
   fi
+  
+  # 创建TAP接口
   sudo ip tuntap add dev $1 mode tap
   sudo ip link set $1 up
   sudo ip addr flush dev $1
   sudo brctl addif br0 $1
   sudo dhclient -nw $1 2>/dev/null || true
-  echo "网络接口 $1 已配置"
 else
   echo "错误: 未指定接口名称"
   exit 1

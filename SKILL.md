@@ -1,16 +1,9 @@
+---
+name: run-oee-qemu
+description: 启动和管理openEuler嵌入式系统QEMU虚拟机，支持用户模式网络和TAP接口网络，包含持久存储、端口转发、QEMU Monitor访问、多实例隔离、网络检查等功能。使用场景包括：(1) 开发和测试openEuler嵌入式系统，(2) 验证内核修改和驱动程序，(3) 网络服务开发和调试，(4) 系统性能测试，(5) 多实例隔离测试，(6) 验证OpenEuler系统功能（快速验证基本功能、服务状态和系统配置），(7) 在OpenEuler虚拟机环境中验证应用程序的兼容性、功能完整性和执行效果（自动生成合适配置，启动系统，运行应用验证执行效果，最后关闭系统），(8) 自动化Guest OS网络检查（SSH密码交互、网络连通性测试、DNS解析验证）
+---
+
 # openEuler QEMU虚拟机启动
-
-启动openEuler嵌入式系统QEMU虚拟机，支持用户模式网络和TAP接口网络，包含持久存储、端口转发、QEMU Monitor访问等功能。
-
-## 使用场景
-
-- 开发和测试openEuler嵌入式系统
-- 验证内核修改和驱动程序
-- 网络服务开发和调试
-- 系统性能测试
-- 多实例隔离测试
-- 验证OpenEuler系统功能：快速验证OpenEuler系统的基本功能、服务状态和系统配置
-- 借用OpenEuler系统验证应用功能：在OpenEuler虚拟机环境中验证应用程序的兼容性、功能完整性和执行效果，自动生成合适配置，启动系统，运行应用验证执行效果，最后关闭系统
 
 ## 快速开始
 
@@ -33,7 +26,7 @@ ssh -p <SSH_PORT> root@localhost
 # 密码: openEuler12#$
 ```
 
-> **注意**：首次登录时系统可能要求修改密码。如果SSH连接被拒绝，建议通过QEMU Monitor控制台登录（无需密码）。
+> **注意**：首次登录时系统可能要求修改密码。请参考"首次登录"部分了解如何正确处理密码验证。
 
 **QEMU Monitor**：
 ```bash
@@ -48,6 +41,19 @@ telnet localhost <MONITOR_PORT>
 ```
 
 - `instance_name`: 实例名称（如 `scenario1`），默认为 `default`
+
+### 4. 网络检查
+
+使用 `ssh_guest_check.sh` 脚本检查Guest OS网络配置：
+
+```bash
+./ssh_guest_check.sh
+```
+
+该脚本会自动：
+1. 处理SSH密码过期场景（自动修改密码）
+2. 执行网络检查命令（ping、curl、nslookup等）
+3. 显示网络配置信息
 
 ## 注意事项
 
@@ -65,10 +71,113 @@ telnet localhost <MONITOR_PORT>
 
 ### 首次登录
 
-首次SSH登录时，系统可能要求修改密码。如果遇到权限问题，建议使用QEMU Monitor控制台登录（无需密码）：
+首次SSH登录时，系统可能要求修改密码。系统会显示 "(root@localhost) Password:" 或 "password:" 提示。
+
+**解决方案**：
+
+1. **使用自动化参数**（推荐）：
+   ```bash
+   ./start_openeuler.sh user -g
+   ```
+   脚本会自动使用 expect 处理密码验证和修改。
+
+2. **使用 ssh_guest_check.sh**（推荐用于网络检查）：
+   ```bash
+   ./ssh_guest_check.sh
+   ```
+   该脚本会自动处理密码交互并执行网络检查。
+
+3. **手动使用 expect 处理**：
+   ```bash
+   expect -c '
+   set timeout 60
+   spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost
+   expect {
+       "New password:" {
+           send "openEuler12#$\r"
+           expect "Retype new password:"
+           send "openEuler12#$\r"
+           expect "#"
+       }
+       "(root@localhost) Password:" {
+           send "openEuler12#$\r"
+           expect "#"
+       }
+       "password:" {
+           send "openEuler12#$\r"
+           expect "#"
+       }
+       "#" {}
+       timeout {
+           puts "ERROR: SSH connection timeout"
+           exit 1
+       }
+   }
+   send "uname -a\r"
+   expect "#"
+   send "exit\r"
+   expect eof
+   '
+   ```
+
+4. **使用 QEMU Monitor 登录**（无需密码）：
+   ```bash
+   telnet localhost <MONITOR_PORT>
+   # 按 Ctrl+] 退出，然后输入 quit
+   ```
+
+### SSH 访问脚本示例
+
+**自动处理密码验证和修改的完整脚本**：
+
 ```bash
-telnet localhost <MONITOR_PORT>
-# 按 Ctrl+] 退出，然后输入 quit
+#!/bin/bash
+# SSH 访问脚本 - 自动处理密码验证
+
+SSH_PORT=${1:-2222}
+TIMEOUT=${2:-60}
+
+expect -c "
+set timeout $TIMEOUT
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $SSH_PORT root@localhost
+expect {
+    \"New password:\" {
+        send \"openEuler12#\$\\r\"
+        expect \"Retype new password:\"
+        send \"openEuler12#\$\\r\"
+        expect \"#\"
+    }
+    \"(root@localhost) Password:\" {
+        send \"openEuler12#\$\\r\"
+        expect \"#\"
+    }
+    \"password:\" {
+        send \"openEuler12#\$\\r\"
+        expect \"#\"
+    }
+    \"#\" {}
+    timeout {
+        puts \"ERROR: SSH connection timeout\"
+        exit 1
+    }
+}
+send \"uname -a\\r\"
+expect \"#\"
+send \"cat /etc/os-release\\r\"
+expect \"#\"
+send \"ip addr show\\r\"
+expect \"#\"
+send \"netstat -tlnp\\r\"
+expect \"#\"
+send \"exit\\r\"
+expect eof
+"
+```
+
+**使用方法**：
+```bash
+./ssh_access.sh [SSH_PORT] [TIMEOUT]
+# 默认: SSH_PORT=2222, TIMEOUT=60
 ```
 
 ## 多实例配置
@@ -96,7 +205,7 @@ INSTANCE_ID="3"
 IMAGE_DIR="/home/volcano/myws/oee2403/build/qemu-aarch64/output/20260127163708"
 KERNEL_PATH="$IMAGE_DIR/zImage"
 ROOTFS_PATH="/home/volcano/myws/oee2403/build/qemu-aarch64/tmp/deploy/images/qemu-aarch64/openeuler-image-qemu-aarch64.cpio.gz"
-DISK_IMG="/home/volcano/myws/oee2403/qemu_oee/scenario1_disk.img"
+DISK_IMG="${INSTANCE_NAME}_disk.img"
 
 # QEMU配置
 QEMU_BINARY=$(which qemu-system-aarch64 2>/dev/null || echo "/usr/bin/qemu-system-aarch64")
@@ -136,6 +245,8 @@ run_oee_qemu/
     ├── example_config.sh          # 示例配置文件
     ├── scenario1_config.sh        # 场景1配置文件
     ├── <instance>_config.sh       # 自定义配置文件
+    ├── ssh_guest_check.sh         # 网络检查脚本
+    ├── check_network.sh           # 网络检查辅助脚本
     ├── <instance>_disk.img        # 持久存储磁盘镜像（qcow2）
     ├── <instance>_qemu.pid        # QEMU进程ID文件
     └── <instance>_qemu.log        # QEMU运行日志
@@ -165,83 +276,7 @@ run_oee_qemu/
 ## 详细文档
 
 - **配置说明**: See [configuration.md](references/configuration.md) for detailed hardware, network, and storage configuration
-- **故障排除**: 常见问题和解决方案
-
-## 故障排除
-
-### 1. 端口占用
-
-**问题**：启动时报错 "端口被占用"
-
-**解决方案**：
-- 脚本会在启动前自动检查端口是否被占用
-- 如果端口被占用，会显示占用进程的PID
-- 使用 `./stop_openeuler.sh` 停止现有实例，或修改配置文件中的端口
-
-```bash
-# 手动检查端口占用
-ss -tlnp | grep -E '2222|4444|8080'
-
-# 停止现有实例
-./stop_openeuler.sh default
-
-# 或强制终止QEMU进程
-pkill -9 -f qemu-system-aarch64
-```
-
-### 2. 首次登录需要修改密码
-
-**问题**：首次SSH登录时系统强制要求修改密码，导致自动化脚本无法执行
-
-**解决方案**：
-- 使用 `--guest-os-info` 或 `-g` 参数，脚本会使用 `expect` 自动处理密码修改
-- expect脚本会自动识别 "New password:" 和 "password:" 两种提示
-
-```bash
-# 启动并自动获取版本信息（自动处理密码修改）
-./start_openeuler.sh user -g
-```
-
-### 3. 获取Guest OS版本信息
-
-**问题**：需要自动获取虚拟机内的系统版本信息
-
-**解决方案**：
-- 使用 `-g` 或 `--guest-os-info` 参数
-- 脚本使用 `expect` 自动登录并执行 `uname -a` 和 `cat /etc/os-release`
-
-```bash
-./start_openeuler.sh user -g
-
-# 输出示例：
-# === 系统版本信息 ===
-# Linux qemu-aarch64 5.10.0-openeuler #1 SMP PREEMPT ...
-# ID=openeuler
-# NAME="openEuler Embedded(openEuler Embedded Reference Distro)"
-# VERSION="24.03-LTS (openEuler24_03-LTS)"
-```
-
-### 4. 缺少磁盘镜像
-```bash
-qemu-img create -f qcow2 scripts/<instance>_disk.img 2G
-```
-
-### 5. SSH主机密钥变更
-```bash
-ssh-keygen -f ~/.ssh/known_hosts -R '[localhost]:<SSH_PORT>'
-```
-
-### 6. 查看日志
-```bash
-tail -f scripts/<instance>_qemu.log
-```
-
-### 7. 多实例端口冲突
-
-确保每个实例的配置文件中使用不同的端口：
-- `SSH_PORT` (默认2222)
-- `HTTP_PORT` (默认8080)
-- `MONITOR_PORT` (默认4444)
+- **故障排除**: See [troubleshooting.md](references/troubleshooting.md) for common issues and solutions
 
 ## 命令行参数
 
@@ -255,6 +290,7 @@ tail -f scripts/<instance>_qemu.log
 - 支持多实例运行，每个实例独立配置
 - 自动生成QEMU启动参数并后台运行
 - 可选自动获取Guest OS版本信息
+- 可选自动检查Guest OS网络配置
 - 提供详细的调试信息输出
 
 **工作流程：**
@@ -266,11 +302,12 @@ tail -f scripts/<instance>_qemu.log
 6. **启动后端口检查** - 验证端口是否正常监听
 7. 查找并验证QEMU进程
 8. （可选）获取Guest OS版本信息
+9. （可选）执行Guest OS网络检查
 
 **使用方法：**
 
 ```bash
-./start_openeuler.sh [user|tap|config_file] [--persistent] [--verbose] [--guest-os-info]
+./start_openeuler.sh [user|tap|config_file] [--persistent] [--verbose] [--guest-os-info] [--check-network]
 ```
 
 **参数说明：**
@@ -283,6 +320,7 @@ tail -f scripts/<instance>_qemu.log
 | `--persistent` | 启用持久化存储，数据保存在qcow2磁盘镜像中 |
 | `--verbose, -v` | 显示详细调试信息，包括完整的expect交互输出 |
 | `--guest-os-info, -g` | 启动后自动获取并显示Guest OS版本信息 |
+| `--check-network, -n` | 启动后自动检查Guest OS网络配置 |
 
 **使用示例：**
 
@@ -295,6 +333,12 @@ tail -f scripts/<instance>_qemu.log
 
 # 启动并显示详细调试信息
 ./start_openeuler.sh user -g -v
+
+# 启动并检查网络配置
+./start_openeuler.sh user -n
+
+# 启动并同时检查网络和显示版本
+./start_openeuler.sh user -g -n
 
 # 使用自定义配置启动
 ./start_openeuler.sh scenario1_config.sh
@@ -335,6 +379,18 @@ Linux qemu-aarch64 5.10.0-openeuler ...
 ID=openeuler
 NAME="openEuler Embedded..."
 VERSION="24.03-LTS..."
+
+=== 网络检查 ===                   # 使用 -n 参数时显示
+=== openEuler Guest OS 网络检查 ===
+SSH 端口: 2222
+
+=== 处理密码交互 ===
+尝试 1/3: 连接 SSH...
+✓ 密码交互成功
+
+=== 执行网络检查 ===
+尝试 1/3: 连接 SSH...
+✓ 网络检查成功
 ```
 
 **错误处理：**
@@ -353,3 +409,60 @@ VERSION="24.03-LTS..."
 | 参数 | 说明 |
 |------|------|
 | `instance_name` | 实例名称，默认为 `default` |
+
+### ssh_guest_check.sh
+
+自动检查Guest OS网络配置的脚本。
+
+**功能概述：**
+- 自动处理SSH密码过期场景（旧密码->新密码->确认新密码）
+- 执行网络检查命令（ping、curl、nslookup等）
+- 显示网络配置信息（DNS、路由、端口等）
+
+**使用方法：**
+
+```bash
+./ssh_guest_check.sh [ssh_port] [timeout]
+```
+
+| 参数 | 说明 |
+|------|------|
+| `ssh_port` | SSH端口，默认为 2222 |
+| `timeout` | 超时时间（秒），默认为 60 |
+
+**使用示例：**
+
+```bash
+# 基本使用（默认参数）
+./ssh_guest_check.sh
+
+# 自定义端口和超时
+./ssh_guest_check.sh 2222 60
+```
+
+**输出示例：**
+
+```
+=== openEuler Guest OS 网络检查 ===
+SSH 端口: 2222
+
+=== 处理密码交互 ===
+尝试 1/3: 连接 SSH...
+✓ 密码交互成功
+
+=== 执行网络检查 ===
+尝试 1/3: 连接 SSH...
+✓ 网络检查成功
+```
+
+**可复用函数：**
+
+脚本提供了 `ssh_password_expect()` 函数，可被其他脚本复用：
+
+```bash
+# 只处理密码交互
+ssh_password_expect 2222 60 "oldpass" "newpass"
+
+# 处理密码并执行命令
+ssh_password_expect 2222 60 "oldpass" "newpass" "echo SSH_OK; uname -a"
+```
