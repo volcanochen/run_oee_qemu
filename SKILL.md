@@ -98,6 +98,190 @@ telnet localhost <MONITOR_PORT>
 
 详细说明请参考 [SSH访问指南](references/ssh_access.md)。
 
+### SSH密码处理最佳实践
+
+在自动化SSH连接和密码交互时，需要特别注意以下几点：
+
+#### 1. 密码相似性检查
+
+**问题**：系统会拒绝与旧密码过于相似的新密码。
+
+**错误示例**：
+- 旧密码：`openEuler12#$`
+- 新密码：`OpenEuler123!` ❌ （太相似，包含相同的词根）
+
+**正确示例**：
+- 旧密码：`openEuler12#$`
+- 新密码：`TestPass456!` ✅ （完全不同的字符组合）
+
+**密码策略**：
+- 新密码必须与旧密码有显著差异
+- 避免使用相同的词根或模式
+- 建议使用完全不同的字符组合
+
+#### 2. 密码修改流程处理
+
+**关键原则**：
+- 第一次出现 `password:` 提示时，使用**旧密码**
+- 如果系统提示修改密码（出现 `Current password:`、`New password:`、`Retype new password:`），则**之后所有密码提示都使用新密码**
+- 需要跟踪密码是否被成功修改过
+
+**expect脚本实现示例**：
+
+```tcl
+#!/usr/bin/expect
+
+set timeout 120
+
+# 定义旧密码和新密码
+set old_pass "openEuler12#$"
+set new_pass "TestPass456!"
+
+# 当前使用的密码（初始为旧密码）
+set current_pass $old_pass
+
+# 密码是否已修改标志
+set password_changed 0
+
+# SSH连接
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@localhost
+
+expect {
+    # 处理密码修改流程
+    -re "Current password:" {
+        send "${old_pass}\r"
+        exp_continue
+    }
+    -re "New password:" {
+        send "${new_pass}\r"
+        set password_changed 1
+        set current_pass $new_pass
+        exp_continue
+    }
+    -re "Retype new password:" {
+        send "${new_pass}\r"
+        exp_continue
+    }
+    # 普通密码提示（根据是否已修改选择密码）
+    -re "\\(root@localhost\\) Password:" {
+        send "${current_pass}\r"
+        exp_continue
+    }
+    -re "password:" {
+        send "${current_pass}\r"
+        exp_continue
+    }
+    # 成功登录到shell
+    "#" {
+        # 密码验证成功，可以执行命令
+    }
+    timeout {
+        puts "ERROR: SSH connection timeout"
+        exit 1
+    }
+}
+```
+
+#### 3. 密码状态跟踪
+
+**重要变量**：
+- `old_pass`：原始密码（从配置文件读取，如 `openEuler12#$`）
+- `new_pass`：新密码（自定义，如 `TestPass456!`）
+- `current_pass`：当前使用的密码（初始为旧密码，修改后更新为新密码）
+- `password_changed`：密码修改标志（0=未修改，1=已修改）
+
+**状态转换**：
+```
+初始状态: current_pass = old_pass, password_changed = 0
+     ↓
+遇到 "Current password:" → 输入 old_pass
+     ↓
+遇到 "New password:" → 输入 new_pass, 设置 password_changed = 1, current_pass = new_pass
+     ↓
+遇到 "Retype new password:" → 输入 new_pass
+     ↓
+后续所有 "password:" 提示 → 输入 current_pass (即 new_pass)
+```
+
+#### 4. 常见错误处理
+
+**错误1：密码相似性检查失败**
+```
+BAD PASSWORD: The password is too similar to the old one
+```
+**解决**：使用完全不同的新密码
+
+**错误2：账户被锁定**
+```
+The account is locked due to 3 failed logins.
+(5 minutes left to unlock)
+```
+**解决**：
+- 等待5分钟或重启QEMU虚拟机
+- 重启后账户会自动解锁
+
+**错误3：多次密码验证失败**
+```
+Received disconnect from 127.0.0.1 port 2222:2: Too many authentication failures
+```
+**解决**：
+- 检查expect脚本的密码匹配逻辑
+- 确保正确跟踪密码修改状态
+- 重启QEMU虚拟机重置SSH状态
+
+#### 5. SCP文件传输密码处理
+
+SCP命令也需要处理密码修改流程：
+
+```tcl
+spawn scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    /path/to/local/file root@localhost:/path/to/remote/file
+
+expect {
+    -re "Current password:" {
+        send "${old_pass}\r"
+        exp_continue
+    }
+    -re "New password:" {
+        send "${new_pass}\r"
+        set password_changed 1
+        set current_pass $new_pass
+        exp_continue
+    }
+    -re "Retype new password:" {
+        send "${new_pass}\r"
+        exp_continue
+    }
+    -re "\\(root@localhost\\) Password:" {
+        send "${current_pass}\r"
+        exp_continue
+    }
+    -re "password:" {
+        send "${current_pass}\r"
+        exp_continue
+    }
+    "100%" {
+        # 文件传输完成
+    }
+    "#" {}
+    timeout {
+        puts "ERROR: SCP timeout"
+        exit 1
+    }
+    eof {}
+}
+```
+
+#### 6. 最佳实践总结
+
+1. **始终定义新旧密码变量**：便于维护和修改
+2. **跟踪密码修改状态**：使用 `password_changed` 标志
+3. **动态更新当前密码**：根据修改状态使用正确的密码
+4. **处理所有密码提示**：包括 `Current password:`、`New password:`、`Retype new password:`、`password:` 等
+5. **设置合理的超时时间**：避免expect脚本无限等待
+6. **错误处理和日志**：记录密码验证失败的情况，便于调试
+7. **密码相似性检查**：确保新密码与旧密码有足够差异
+
 ## 目录结构
 
 ```
